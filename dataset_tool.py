@@ -68,10 +68,10 @@ class TFRecordExporter:
             assert self.shape[0] in [1, 3]
             assert self.shape[1] == self.shape[2]
             assert self.shape[1] == 2**self.resolution_log2
-            tfr_opt = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.NONE)
+            tfr_opt = tf.compat.v1.python_io.TFRecordOptions(tf.compat.v1.python_io.TFRecordCompressionType.NONE)
             for lod in range(self.resolution_log2 - 1):
                 tfr_file = self.tfr_prefix + '-r%02d.tfrecords' % (self.resolution_log2 - lod)
-                self.tfr_writers.append(tf.python_io.TFRecordWriter(tfr_file, tfr_opt))
+                self.tfr_writers.append(tf.compat.v1.python_io.TFRecordWriter(tfr_file, tfr_opt))
         assert img.shape == self.shape
         for lod, tfr_writer in enumerate(self.tfr_writers):
             if lod:
@@ -607,6 +607,8 @@ def create_from_images(tfrecord_dir, image_dir, shuffle):
     if img.shape[1] != resolution:
         error('Input images must have the same width and height')
     if resolution != 2 ** int(np.floor(np.log2(resolution))):
+        print(resolution)
+        print(int(np.floor(np.log2(resolution))))
         error('Input image resolution must be a power-of-two')
     if channels not in [1, 3]:
         error('Input images must be stored as RGB or grayscale')
@@ -727,10 +729,35 @@ def execute_cmdline(argv):
     p.add_argument(     'hdf5_filename',    help='HDF5 archive containing the images')
     p.add_argument(     '--shuffle',        help='Randomize image order (default: 1)', type=int, default=1)
 
+    p = add_command(    'create_retina_dataset', 'original function', 'create_retina_dataset datasets/mydataset myimagedir')
+    p.add_argument(     'tfrecord_dir',     help='New dataset directory to be created')
+    p.add_argument(     'image_dir',        help='Directory containing the images')
+
     args = parser.parse_args(argv[1:] if len(argv) > 1 else ['-h'])
     func = globals()[args.command]
     del args.command
     func(**vars(args))
+
+
+# Original function
+def create_retina_dataset(tfrecord_dir, image_dir):
+    print('Loading img from "%s"' % image_dir)
+    glob_pattern = os.path.join(image_dir, '*.png')
+    print(glob_pattern)
+    image_filenames = sorted(glob.glob(glob_pattern))
+    print(len(image_filenames))
+
+    with TFRecordExporter(tfrecord_dir, len(image_filenames)) as tfr:
+        order = tfr.choose_shuffled_order()
+        for idx in range(len(image_filenames)):
+            img = PIL.Image.open(image_filenames[order[idx]])
+            img = np.asarray(img.convert('RGB'))
+            if img.shape != (512, 512, 3):
+                print('[error] img shape not match.', image_filenames)
+                continue
+            img = img.transpose(2, 0, 1) # HWC => CHW
+            tfr.add_image(img)
+
 
 #----------------------------------------------------------------------------
 
